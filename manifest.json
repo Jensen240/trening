@@ -2,7 +2,7 @@
   "name": "Fitness Training Diary",
   "short_name": "Fitness Diary",
   "description": "A simple app to log your workouts and personal fitness data.",
-  "start_url": ".",
+  "start_url": "index.html",
   "display": "standalone",
   "background_color": "#121212",
   "theme_color": "#bb86fc",

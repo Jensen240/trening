@@ -1,9 +1,10 @@
-const CACHE_NAME = 'training-diary-cache-v1';
+const CACHE_NAME = 'training-diary-cache-v2';
 // Add the main app shell files to the pre-cache list.
 const urlsToCache = [
   '/',
   'index.html',
   'index.css',
+  'index.tsx',
   'manifest.json',
   'icons/icon-192.png',
   'icons/icon-512.png',
