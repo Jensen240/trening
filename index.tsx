@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 
@@ -11,12 +10,16 @@ interface PersonalInfo {
 
 interface Workout {
     id: number;
-    date: string;
+    time: string; // e.g., "14:35"
     exercise: string;
     sets: number | '';
     reps: number | '';
     weight: number | '';
 }
+
+// A version of Workout for the temporary batch, without id, date, or time
+type WorkoutBatchItem = Omit<Workout, 'id' | 'time'>;
+
 
 // Translations for i18n
 const translations = {
@@ -38,7 +41,6 @@ const translations = {
         repsPlaceholder: 'e.g., 10',
         workoutWeight: 'Weight (kg)',
         workoutWeightPlaceholder: 'e.g., 100',
-        addWorkoutButton: 'Add Workout',
         workoutLog: 'Workout Log',
         noWorkouts: 'No workouts logged yet. Add one above!',
         fillFieldsAlert: 'Please fill out all workout fields.',
@@ -56,6 +58,13 @@ const translations = {
         shareAppTitle: 'Check out this Fitness App!',
         shareAppText: 'Track your workouts with the Fitness Training Diary app.',
         appUrlCopied: 'App URL copied to clipboard!',
+        addExerciseToSession: 'Add Exercise',
+        logSession: 'Log Session',
+        currentSession: 'Current Session',
+        remove: 'Remove',
+        sessionEmpty: 'Add an exercise to start a session.',
+        date: 'Date',
+        deleteWorkout: 'Delete Workout',
     },
     no: {
         title: 'Treningsdagbok',
@@ -75,7 +84,6 @@ const translations = {
         repsPlaceholder: 'f.eks. 10',
         workoutWeight: 'Vekt (kg)',
         workoutWeightPlaceholder: 'f.eks. 100',
-        addWorkoutButton: 'Legg til Økt',
         workoutLog: 'Treningslogg',
         noWorkouts: 'Ingen økter logget enda. Legg til en ovenfor!',
         fillFieldsAlert: 'Vennligst fyll ut alle feltene for økten.',
@@ -93,6 +101,13 @@ const translations = {
         shareAppTitle: 'Sjekk ut denne treningsappen!',
         shareAppText: 'Loggfør øktene dine med Treningsdagbok-appen.',
         appUrlCopied: 'App-URL kopiert til utklippstavlen!',
+        addExerciseToSession: 'Legg til Øvelse',
+        logSession: 'Loggfør Økt',
+        currentSession: 'Nåværende Økt',
+        remove: 'Fjern',
+        sessionEmpty: 'Legg til en øvelse for å starte en økt.',
+        date: 'Dato',
+        deleteWorkout: 'Slett økt',
     }
 };
 
@@ -104,7 +119,6 @@ const App = () => {
     const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
     const [showIosInstall, setShowIosInstall] = useState(false);
 
-
     // State for personal information
     const [personalInfo, setPersonalInfo] = useState<PersonalInfo>({
         name: '',
@@ -112,11 +126,16 @@ const App = () => {
         weight: '',
     });
 
-    // State for workout log
-    const [workouts, setWorkouts] = useState<Workout[]>([]);
+    // State for workout log (grouped by date)
+    const [groupedWorkouts, setGroupedWorkouts] = useState<{ [key: string]: Workout[] }>({});
+    const [expandedDate, setExpandedDate] = useState<string | null>(null);
+
+    // State for batching workouts before logging
+    const [workoutBatch, setWorkoutBatch] = useState<WorkoutBatchItem[]>([]);
+    const [sessionDate, setSessionDate] = useState(new Date().toISOString().split('T')[0]);
 
     // State for the current workout being entered
-    const [currentWorkout, setCurrentWorkout] = useState({
+    const [currentWorkout, setCurrentWorkout] = useState<WorkoutBatchItem>({
         exercise: '',
         sets: '',
         reps: '',
@@ -136,19 +155,43 @@ const App = () => {
         };
     }, []);
 
-    // Load data from localStorage on initial render
+    // Load and migrate data from localStorage on initial render
     useEffect(() => {
         try {
             const savedPersonalInfo = localStorage.getItem('personalInfo');
             if (savedPersonalInfo) {
                 setPersonalInfo(JSON.parse(savedPersonalInfo));
             }
-            const savedWorkouts = localStorage.getItem('workouts');
-            if (savedWorkouts) {
-                setWorkouts(JSON.parse(savedWorkouts));
+
+            const savedGroupedWorkouts = localStorage.getItem('groupedWorkouts');
+            if (savedGroupedWorkouts) {
+                setGroupedWorkouts(JSON.parse(savedGroupedWorkouts));
+            } else {
+                // Check for old, flat workout data and migrate it
+                const oldSavedWorkouts = localStorage.getItem('workouts');
+                if (oldSavedWorkouts) {
+                    const oldWorkouts: (Workout & { date: string })[] = JSON.parse(oldSavedWorkouts);
+                    const newGroupedData: { [key: string]: Workout[] } = {};
+
+                    oldWorkouts.forEach(w => {
+                        const d = new Date(w.date);
+                        if (!isNaN(d.getTime())) {
+                            const dateKey = d.toISOString().split('T')[0];
+                            if (!newGroupedData[dateKey]) {
+                                newGroupedData[dateKey] = [];
+                            }
+                            const { date, ...workoutData } = w;
+                            newGroupedData[dateKey].push({ ...workoutData, time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+                        }
+                    });
+
+                    setGroupedWorkouts(newGroupedData);
+                    localStorage.setItem('groupedWorkouts', JSON.stringify(newGroupedData));
+                    localStorage.removeItem('workouts'); // Clean up old data
+                }
             }
         } catch (error) {
-            console.error("Failed to parse data from localStorage", error);
+            console.error("Failed to parse or migrate data from localStorage", error);
         }
     }, []);
 
@@ -156,91 +199,108 @@ const App = () => {
         const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
         const isInStandaloneMode = 'standalone' in window.navigator && (window.navigator as any).standalone;
 
-        // Show the install prompt on iOS if it's not installed and not dismissed
         if (isIos && !isInStandaloneMode && localStorage.getItem('iosInstallDismissed') !== 'true') {
             setShowIosInstall(true);
         }
     }, []);
     
-    // Save language to localStorage
     useEffect(() => {
         localStorage.setItem('language', language);
     }, [language]);
 
-    // Save data to localStorage whenever it changes
     useEffect(() => {
         localStorage.setItem('personalInfo', JSON.stringify(personalInfo));
     }, [personalInfo]);
 
     useEffect(() => {
-        localStorage.setItem('workouts', JSON.stringify(workouts));
-    }, [workouts]);
+        localStorage.setItem('groupedWorkouts', JSON.stringify(groupedWorkouts));
+    }, [groupedWorkouts]);
 
     const handlePersonalInfoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
-        setPersonalInfo(prevInfo => ({
-            ...prevInfo,
-            [name]: value,
-        }));
+        setPersonalInfo(prevInfo => ({ ...prevInfo, [name]: value }));
     };
 
     const handleWorkoutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
-        setCurrentWorkout(prevWorkout => ({
-            ...prevWorkout,
-            [name]: value,
-        }));
+        setCurrentWorkout(prevWorkout => ({ ...prevWorkout, [name]: value }));
     };
 
-    const addWorkout = (e: React.FormEvent) => {
+    const handleAddExerciseToBatch = (e: React.FormEvent) => {
         e.preventDefault();
         if (!currentWorkout.exercise || !currentWorkout.sets || !currentWorkout.reps || !currentWorkout.weight) {
             alert(t.fillFieldsAlert);
             return;
         }
 
-        const newWorkout: Workout = {
-            id: Date.now(),
-            date: new Date().toLocaleString(language === 'no' ? 'no-NO' : 'en-US'),
+        const newExercise: WorkoutBatchItem = {
             exercise: currentWorkout.exercise,
             sets: Number(currentWorkout.sets),
             reps: Number(currentWorkout.reps),
             weight: Number(currentWorkout.weight),
         };
 
-        setWorkouts(prevWorkouts => [newWorkout, ...prevWorkouts]);
+        setWorkoutBatch(prevBatch => [...prevBatch, newExercise]);
         
-        // Clear form
-        setCurrentWorkout({
-            exercise: '',
-            sets: '',
-            reps: '',
-            weight: '',
+        setCurrentWorkout({ exercise: '', sets: '', reps: '', weight: '' });
+    };
+    
+    const handleLogSession = () => {
+        if (workoutBatch.length === 0) return;
+
+        const time = new Date().toLocaleTimeString(language === 'no' ? 'no-NO' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+        const newWorkoutsForSession: Workout[] = workoutBatch.map((item, index) => ({
+            ...item,
+            id: Date.now() + index,
+            time: time
+        }));
+
+        setGroupedWorkouts(prev => {
+            const newGroups = { ...prev };
+            const existingDayWorkouts = newGroups[sessionDate] || [];
+            newGroups[sessionDate] = [...newWorkoutsForSession, ...existingDayWorkouts];
+            return newGroups;
+        });
+
+        setWorkoutBatch([]);
+    };
+
+    const handleRemoveFromBatch = (indexToRemove: number) => {
+        setWorkoutBatch(prevBatch => prevBatch.filter((_, index) => index !== indexToRemove));
+    };
+
+    const handleDeleteWorkout = (dateKey: string, workoutId: number) => {
+        setGroupedWorkouts(prev => {
+            const newGroups = { ...prev };
+            const updatedDayWorkouts = newGroups[dateKey].filter(w => w.id !== workoutId);
+            
+            if (updatedDayWorkouts.length === 0) {
+                delete newGroups[dateKey];
+            } else {
+                newGroups[dateKey] = updatedDayWorkouts;
+            }
+            
+            return newGroups;
         });
     };
     
     const handleShare = async () => {
-        if (workouts.length === 0) return;
-
         const title = personalInfo.name ? t.workoutSummaryFor.replace('{name}', personalInfo.name) : t.defaultWorkoutSummary;
-        
         let textToShare = `${title}\n${t.workoutSummaryTextHeader}\n\n`;
 
-        workouts.forEach(workout => {
-            const workoutDetails = t.repsAndWeight
-                .replace('{reps}', String(workout.reps))
-                .replace('{weight}', String(workout.weight));
-            
-            textToShare += `${workout.date}\n`;
-            textToShare += `${workout.exercise}: ${workout.sets} x ${workoutDetails}\n\n`;
+        Object.keys(groupedWorkouts).sort().reverse().forEach(dateKey => {
+            const date = new Date(dateKey).toLocaleDateString(language === 'no' ? 'no-NO' : 'en-CA', { year: 'numeric', month: 'long', day: 'numeric' });
+            textToShare += `--- ${date} ---\n`;
+            groupedWorkouts[dateKey].forEach(workout => {
+                const workoutDetails = t.repsAndWeight.replace('{reps}', String(workout.reps)).replace('{weight}', String(workout.weight));
+                textToShare += `${workout.time} - ${workout.exercise}: ${workout.sets} x ${workoutDetails}\n`;
+            });
+            textToShare += '\n';
         });
 
         if (navigator.share) {
             try {
-                await navigator.share({
-                    title: title,
-                    text: textToShare,
-                });
+                await navigator.share({ title: title, text: textToShare });
             } catch (error) {
                 console.log('User cancelled share or error:', error);
             }
@@ -248,8 +308,6 @@ const App = () => {
             navigator.clipboard.writeText(textToShare).then(() => {
                 setToastMessage(t.copiedToClipboard);
                 setTimeout(() => setToastMessage(''), 2000);
-            }).catch(err => {
-                console.error('Failed to copy text: ', err);
             });
         }
     };
@@ -257,14 +315,6 @@ const App = () => {
     const handleInstallClick = () => {
         if (!installPromptEvent) return;
         installPromptEvent.prompt();
-        installPromptEvent.userChoice.then((choiceResult: { outcome: string }) => {
-            if (choiceResult.outcome === 'accepted') {
-                console.log('User accepted the install prompt');
-            } else {
-                console.log('User dismissed the install prompt');
-            }
-            setInstallPromptEvent(null);
-        });
     };
     
     const handleIosInstallDismiss = () => {
@@ -273,29 +323,19 @@ const App = () => {
     };
 
     const handleShareApp = async () => {
-        const shareData = {
-            title: t.shareAppTitle,
-            text: t.shareAppText,
-            url: window.location.href,
-        };
+        const shareData = { title: t.shareAppTitle, text: t.shareAppText, url: window.location.href };
         if (navigator.share) {
-            try {
-                await navigator.share(shareData);
-            } catch (error) {
-                console.log('User cancelled share or error:', error);
-            }
+            await navigator.share(shareData);
         } else {
             navigator.clipboard.writeText(window.location.href).then(() => {
                 setToastMessage(t.appUrlCopied);
                 setTimeout(() => setToastMessage(''), 2000);
-            }).catch(err => {
-                console.error('Failed to copy URL: ', err);
             });
         }
     };
 
-
     const t = translations[language];
+    const sortedDateKeys = Object.keys(groupedWorkouts).sort().reverse();
 
     return (
         <main>
@@ -336,7 +376,11 @@ const App = () => {
 
             <section className="container">
                 <h2>{t.addWorkout}</h2>
-                <form onSubmit={addWorkout}>
+                <div className="form-group">
+                    <label htmlFor="sessionDate">{t.date}</label>
+                    <input type="date" id="sessionDate" name="sessionDate" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} />
+                </div>
+                <form onSubmit={handleAddExerciseToBatch}>
                     <div className="workout-details-form">
                         <div className="form-group">
                             <label htmlFor="exercise">{t.exercise}</label>
@@ -355,30 +399,65 @@ const App = () => {
                             <input type="number" id="workoutWeight" name="weight" value={currentWorkout.weight} onChange={handleWorkoutChange} placeholder={t.workoutWeightPlaceholder} />
                         </div>
                     </div>
-                    <button type="submit">{t.addWorkoutButton}</button>
+                    <button type="submit">{t.addExerciseToSession}</button>
                 </form>
+                 <div className="current-session-container">
+                    <h3>{t.currentSession}</h3>
+                    {workoutBatch.length > 0 ? (
+                        <>
+                            <ul className="current-session-log">
+                                {workoutBatch.map((item, index) => (
+                                    <li key={index} className="batch-item">
+                                        <span>
+                                            <strong>{item.exercise}</strong>: {item.sets} x {t.repsAndWeight.replace('{reps}', String(item.reps)).replace('{weight}', String(item.weight))}
+                                        </span>
+                                        <button onClick={() => handleRemoveFromBatch(index)} className="remove-button" aria-label={t.remove}>&times;</button>
+                                    </li>
+                                ))}
+                            </ul>
+                            <button onClick={handleLogSession} className="log-session-button">{t.logSession}</button>
+                        </>
+                    ) : (
+                        <p className="session-empty-message">{t.sessionEmpty}</p>
+                    )}
+                </div>
             </section>
             
             <section className="container">
                  <div className="section-header">
                     <h2>{t.workoutLog}</h2>
-                     {workouts.length > 0 && (
+                     {sortedDateKeys.length > 0 && (
                         <button onClick={handleShare} className="share-button">
                              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="currentColor"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.17c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
                             {t.shareLog}
                         </button>
                     )}
                 </div>
-                {workouts.length > 0 ? (
-                    <ul className="workout-log">
-                        {workouts.map(workout => (
-                            <li key={workout.id} className="workout-item">
-                                <p className="date">{workout.date}</p>
-                                <p><strong>{t.exerciseLabel}:</strong> {workout.exercise}</p>
-                                <p><strong>{t.detailsLabel}:</strong> {workout.sets} x {t.repsAndWeight.replace('{reps}', String(workout.reps)).replace('{weight}', String(workout.weight))}</p>
-                            </li>
+                {sortedDateKeys.length > 0 ? (
+                    <div className="workout-log-grouped">
+                        {sortedDateKeys.map(dateKey => (
+                            <div key={dateKey} className="workout-day-group">
+                                <button className="date-header" onClick={() => setExpandedDate(expandedDate === dateKey ? null : dateKey)}>
+                                    <span>{new Date(dateKey + 'T00:00:00').toLocaleDateString(language === 'no' ? 'no-NO' : 'en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                                    <span className={`chevron ${expandedDate === dateKey ? 'expanded' : ''}`}>&#9660;</span>
+                                </button>
+                                {expandedDate === dateKey && (
+                                    <ul className="workout-log">
+                                        {groupedWorkouts[dateKey].map(workout => (
+                                            <li key={workout.id} className="workout-item">
+                                                 <button onClick={() => handleDeleteWorkout(dateKey, workout.id)} className="delete-workout-button" title={t.deleteWorkout}>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="currentColor"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z"/></svg>
+                                                </button>
+                                                <p className="time">{workout.time}</p>
+                                                <p><strong>{workout.exercise}</strong></p>
+                                                <p>{workout.sets} x {t.repsAndWeight.replace('{reps}', String(workout.reps)).replace('{weight}', String(workout.weight))}</p>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
                         ))}
-                    </ul>
+                    </div>
                 ) : (
                     <p>{t.noWorkouts}</p>
                 )}
