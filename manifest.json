@@ -1,27 +1,27 @@
 {
-  "short_name": "Training Diary",
   "name": "Fitness Training Diary",
+  "short_name": "Fitness Diary",
+  "description": "A simple app to log your workouts and personal fitness data.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#bb86fc",
   "icons": [
     {
-      "src": "/public/icons/icon-192.png",
+      "src": "icons/icon-192.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "/public/icons/icon-512.png",
+      "src": "icons/icon-512.png",
       "type": "image/png",
       "sizes": "512x512"
     },
     {
-      "src": "/public/icons/icon-maskable-512.png",
+      "src": "icons/icon-maskable-512.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "maskable"
     }
-  ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#bb86fc",
-  "background_color": "#121212",
-  "description": "A simple app to log your workouts and personal fitness data."
+  ]
 }

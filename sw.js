@@ -1,14 +1,13 @@
 const CACHE_NAME = 'training-diary-cache-v1';
-// Add the main TSX file and core dependencies to the pre-cache list to ensure the app is available offline.
+// Add the main app shell files to the pre-cache list.
 const urlsToCache = [
   '/',
-  '/index.html',
-  '/index.css',
-  '/index.tsx', 
-  '/manifest.json',
-  '/public/icons/icon-192.png',
-  '/public/icons/icon-512.png',
-  '/public/icons/icon-maskable-512.png',
+  'index.html',
+  'index.css',
+  'manifest.json',
+  'icons/icon-192.png',
+  'icons/icon-512.png',
+  'icons/icon-maskable-512.png',
   'https://esm.sh/react@^19.1.0',
   'https://esm.sh/react-dom@^19.1.0/client'
 ];
